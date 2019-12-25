@@ -153,7 +153,7 @@ public final class NamingEJBClientInterceptor implements EJBClientInterceptor {
         if (uris == null) {
             uris = new ArrayList<>(providerUris.size());
             for (URI uri : providerUris) {
-                if (!isBlackListed(context, uri)) {
+                if (!isBlackListed(uri)) {
                     uris.add(uri);
                 }
             }
@@ -192,7 +192,7 @@ public final class NamingEJBClientInterceptor implements EJBClientInterceptor {
         HashSet<URI> preferred = new HashSet<>(attachment);
         List<URI> result = null;
         for (URI check : uris) {
-            if (preferred.contains(check) && !isBlackListed(context, check)) {
+            if (preferred.contains(check) && !isBlackListed(check)) {
                 if (result == null) {
                     result = new ArrayList<>(preferred.size());
                 }
