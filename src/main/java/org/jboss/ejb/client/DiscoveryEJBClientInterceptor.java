@@ -30,6 +30,7 @@ import static org.jboss.ejb.client.EJBClientContext.withSuppressed;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -66,6 +67,7 @@ import org.wildfly.security.manager.WildFlySecurityManager;
  * resolves the destination).
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
+ * @author <a href="mailto:jbaesner@redhat.com">Joerg Baesner</a>
  */
 @ClientInterceptorPriority(DiscoveryEJBClientInterceptor.PRIORITY)
 public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor {
@@ -75,6 +77,14 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
     private static final boolean WILDFLY_TESTSUITE_HACK = Boolean.getBoolean("org.jboss.ejb.client.wildfly-testsuite-hack");
     // This provides a way timeout a discovery, avoiding blocking on some edge cases. See EJBCLIENT-311.
     private static final long DISCOVERY_TIMEOUT = Long.parseLong(WildFlySecurityManager.getPropertyPrivileged("org.jboss.ejb.client.discovery.timeout", "0"));
+    
+    // This provides a mechanism to disable fallback to the NamingEJBClientInterceptor to determine the target destination
+    // the default value is 'true', meaning to do a fallback and stay backward compatible 
+    private static final boolean DO_NAMING_FALLBACK =
+            AccessController.doPrivileged((PrivilegedAction<Boolean>) () -> {
+                String val = System.getProperty("org.jboss.ejb.client.discovery.do.naming.fallback");
+                return (val == null) ? Boolean.TRUE : Boolean.valueOf(val); 
+            });
 
     /**
      * This interceptor's priority.
@@ -588,9 +598,13 @@ public final class DiscoveryEJBClientInterceptor implements EJBClientInterceptor
                 Logs.INVOCATION.debugf("DiscoveryEJBClientInterceptor: performed cluster discovery, nodes is empty; trying an initial ");
             }
 
-            final NamingProvider namingProvider = context.getAttachment(Keys.NAMING_PROVIDER_ATTACHMENT_KEY);
-            if (namingProvider != null) {
-                NamingEJBClientInterceptor.setNamingDestination(context, namingProvider);
+            if (DO_NAMING_FALLBACK) {
+                final NamingProvider namingProvider = context.getAttachment(Keys.NAMING_PROVIDER_ATTACHMENT_KEY);
+                if (namingProvider != null) {
+                    NamingEJBClientInterceptor.setNamingDestination(context, namingProvider);
+                }
+            } else {
+                Logs.INVOCATION.trace("NamingEJBClientInterceptor fallback disabled");
             }
 
             return problems;
