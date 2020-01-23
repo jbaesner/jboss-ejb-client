@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -57,6 +58,7 @@ final class NodeInformation {
     private final String nodeName;
 
     private final ConcurrentMap<EJBClientChannel, Set<EJBModuleIdentifier>> modulesByConnection = new ConcurrentHashMap<>(1);
+    private final ConcurrentMap<EJBModuleIdentifier, Long> moduleAvailableTimestamps = new ConcurrentHashMap<>(1);
     private final ConcurrentMap<String, ClusterNodeInformation> clustersByName = new ConcurrentHashMap<>(1);
     private final ConcurrentMap<EJBClientChannel, InetSocketAddress> addressesByConnection = new ConcurrentHashMap<>(1);
 
@@ -72,6 +74,10 @@ final class NodeInformation {
         return nodeName;
     }
 
+    Long getModuleAvailabilityTimestamp(EJBModuleIdentifier module) {
+        return moduleAvailableTimestamps.get(module);
+    }
+    
     boolean discover(ServiceType serviceType, FilterSpec filterSpec, DiscoveryResult discoveryResult) {
         if (invalid) return false;
         boolean found = false;
@@ -242,10 +248,13 @@ final class NodeInformation {
         }
     }
 
-    void addModules(final EJBClientChannel clientChannel, final EJBModuleIdentifier[] moduleList) {
+    void addModules(final EJBClientChannel clientChannel, final EJBModuleIdentifier[] moduleList, final long availableSinceNanoTime) {
         synchronized (this) {
             serviceURLCache = null;
             Collections.addAll(modulesByConnection.computeIfAbsent(clientChannel, ignored -> new HashSet<>()), moduleList);
+            for(EJBModuleIdentifier module : moduleList) {
+                moduleAvailableTimestamps.put(module, availableSinceNanoTime);
+            }
         }
     }
 
@@ -255,6 +264,12 @@ final class NodeInformation {
             final Set<EJBModuleIdentifier> set = modulesByConnection.get(clientChannel);
             if (set != null) {
                 set.removeAll(toRemove);
+            }
+
+            for (Entry<EJBModuleIdentifier, Long> entry : moduleAvailableTimestamps.entrySet()) {
+                if (toRemove.contains(entry.getKey())) {
+                    moduleAvailableTimestamps.remove(entry.getKey());
+                }
             }
         }
     }
@@ -266,6 +281,8 @@ final class NodeInformation {
             if (set != null) {
                 set.remove(toRemove);
             }
+            
+            moduleAvailableTimestamps.remove(toRemove);
         }
     }
 

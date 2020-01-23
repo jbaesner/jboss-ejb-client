@@ -327,6 +327,11 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
     }
 
     void sendRequestInitial() {
+        
+        if(Logs.INVOCATION.isDebugEnabled()) {
+            Logs.INVOCATION.debugf("EJBClientInvocationContext.sendRequestInitial: startTime: %d", startTime);
+        }
+        
         assert checkState() == State.SENDING;
         for (;;) {
             assert interceptorChainIndex == 0;
@@ -626,8 +631,8 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
                 }
                 return result;
             } catch (Throwable t) {
-                log.tracef("Encountered exception while calling getResult(): exception = %s", t.toString());
                 if (idx == 0) {
+                    log.tracef("Encountered exception while calling getResult(): exception = %s", t.toString());
                     synchronized (lock) {
                         // retry if we can
                         this.resultProducer = null;
@@ -771,6 +776,11 @@ public final class EJBClientInvocationContext extends AbstractInvocationContext 
         return discoveryContext;
     }
 
+    @NotNull
+    public long getStartTime() {
+        return startTime;
+    }
+    
     Future<?> getFutureResponse() {
         return new FutureResponse();
     }

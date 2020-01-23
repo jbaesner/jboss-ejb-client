@@ -51,6 +51,7 @@ import javax.net.ssl.SSLContext;
 import org.jboss.ejb._private.Logs;
 import org.jboss.ejb.client.EJBClientConnection;
 import org.jboss.ejb.client.EJBClientContext;
+import org.jboss.ejb.client.EJBClientInvocationContext;
 import org.jboss.ejb.client.EJBModuleIdentifier;
 import org.jboss.logging.Logger;
 import org.jboss.remoting3.ConnectionPeerIdentity;
@@ -355,6 +356,99 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         return config.useProtocol(target.getScheme()).useHost(target.getHost()).usePort(target.getPort());
     }
 
+    static final boolean mustRemoveNodeFromDiscoveredNodeRegistry2(EJBClientInvocationContext context,
+            EJBModuleIdentifier moduleIdentifier, NodeInformation nodeInformation) {
+
+        Assert.checkNotNullParam("context", context);
+        Assert.checkNotNullParam("moduleIdentifier", moduleIdentifier);
+        Assert.checkNotNullParam("nodeInformation", nodeInformation);
+        
+        boolean mustRemoveNode = false;
+
+        final Long moduleAvailibilityTimestamp = nodeInformation.getModuleAvailabilityTimestamp(moduleIdentifier);
+
+        Long invocationTimestamp = context.getStartTime();
+
+        if (moduleAvailibilityTimestamp != null) {
+
+            // invocation has begun after the DNR has been update with the module information
+            // --> do not remove the module from this node
+            if (invocationTimestamp.longValue() > moduleAvailibilityTimestamp.longValue()) {
+
+                if (Logs.INVOCATION.isDebugEnabled()) {
+                    final String nodeName = nodeInformation.getNodeName();
+                    Logs.INVOCATION.debugf(
+                            "invocationTimestamp: %d. Module available on node '%s' since: %d, was before starting this invocation. Must not remove module '%s' from node '%s' in DNR",
+                            invocationTimestamp, nodeName, moduleAvailibilityTimestamp, moduleIdentifier, nodeName);
+                }
+            } else {
+
+                if (Logs.INVOCATION.isDebugEnabled()) {
+                    final String nodeName = nodeInformation.getNodeName();
+                    Logs.INVOCATION.debugf(
+                            "invocationTimestamp: %d. Module available on node '%s' since: %d, was after or at starting this invocation. Must remove module '%s' from node '%s' in DNR",
+                            invocationTimestamp, nodeName, moduleAvailibilityTimestamp, moduleIdentifier, nodeName);
+                }
+                mustRemoveNode = true;
+            }
+        } else {
+
+            if (Logs.INVOCATION.isDebugEnabled()) {
+                final String nodeName = nodeInformation.getNodeName();
+                Logs.INVOCATION.debugf(
+                        "invocationTimestamp: %d. Module available on node '%s' not tracked. Must not remove module '%s' from node '%s' in DNR",
+                        invocationTimestamp, nodeName, moduleIdentifier, nodeName);
+            }
+        }
+        return mustRemoveNode;
+    }
+
+    static final boolean mustRemoveNodeFromDiscoveredNodeRegistry(EJBClientInvocationContext context,
+            EJBModuleIdentifier moduleIdentifier, NodeInformation nodeInformation) {
+
+        Assert.checkNotNullParam("context", context);
+        Assert.checkNotNullParam("moduleIdentifier", moduleIdentifier);
+        Assert.checkNotNullParam("nodeInformation", nodeInformation);
+        
+        boolean mustRemoveNode = false;
+
+        final Long moduleAvailibilityTimestamp = nodeInformation.getModuleAvailabilityTimestamp(moduleIdentifier);
+
+        Long invocationTimestamp = context.getStartTime();
+
+        if (moduleAvailibilityTimestamp != null) {
+
+//            if (invocationTimestamp.longValue() > moduleAvailibilityTimestamp.longValue()) {
+            if (moduleAvailibilityTimestamp.longValue() >= invocationTimestamp.longValue()) {
+                
+                if (Logs.INVOCATION.isDebugEnabled()) {
+                    final String nodeName = nodeInformation.getNodeName();
+                    Logs.INVOCATION.debugf(
+                            "invocationTimestamp: %d. Module available on node '%s' since: %d, was after or at starting this invocation. Must not remove module '%s' from node '%s' in DNR",
+                            invocationTimestamp, nodeName, moduleAvailibilityTimestamp, moduleIdentifier, nodeName);
+                }
+            } else {
+                
+                if (Logs.INVOCATION.isDebugEnabled()) {
+                    final String nodeName = nodeInformation.getNodeName();
+                    Logs.INVOCATION.debugf(
+                            "invocationTimestamp: %d. Module available on node '%s' since: %d, was before starting this invocation. Must remove module '%s' from node '%s' in DNR",
+                            invocationTimestamp, nodeName, moduleAvailibilityTimestamp, moduleIdentifier, nodeName);
+                }
+                mustRemoveNode = true;
+            }
+        } else {
+
+            if (Logs.INVOCATION.isDebugEnabled()) {
+                final String nodeName = nodeInformation.getNodeName();
+                Logs.INVOCATION.debugf(
+                        "invocationTimestamp: %d. Module available on node '%s' not tracked. Must not remove module '%s' from node '%s' in DNR",
+                        invocationTimestamp, nodeName, moduleIdentifier, nodeName);
+            }
+        }
+        return mustRemoveNode;
+    }
+    
     final class DiscoveryAttempt implements DiscoveryRequest, DiscoveryResult {
         private final ServiceType serviceType;
         private final FilterSpec filterSpec;

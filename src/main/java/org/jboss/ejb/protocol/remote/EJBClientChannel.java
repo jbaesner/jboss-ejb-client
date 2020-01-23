@@ -19,6 +19,7 @@
 package org.jboss.ejb.protocol.remote;
 
 import static java.lang.Math.min;
+import static org.jboss.ejb.protocol.remote.RemotingEJBDiscoveryProvider.mustRemoveNodeFromDiscoveredNodeRegistry;
 import static org.jboss.ejb.protocol.remote.TCCLUtils.getAndSetSafeTCCL;
 import static org.jboss.ejb.protocol.remote.TCCLUtils.resetTCCL;
 import static org.xnio.Bits.allAreClear;
@@ -210,6 +211,9 @@ class EJBClientChannel {
                     int count = PackedInteger.readPackedInteger(message);
                     final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(getChannel().getConnection().getRemoteEndpointName());
                     final EJBModuleIdentifier[] moduleList = new EJBModuleIdentifier[count];
+                    
+                    final long nanoTime = System.nanoTime();
+                    
                     for (int i = 0; i < count; i ++) {
                         final String appName = message.readUTF();
                         final String moduleName = message.readUTF();
@@ -218,10 +222,10 @@ class EJBClientChannel {
                         moduleList[i] = moduleIdentifier;
 
                         if (Logs.INVOCATION.isDebugEnabled()) {
-                            Logs.INVOCATION.debugf("Received MODULE_AVAILABLE(%x) message from node %s for module %s", msg, remoteEndpoint, moduleIdentifier);
+                            Logs.INVOCATION.debugf("Received MODULE_AVAILABLE(%x) message from node %s for module %s, available since: %d", msg, remoteEndpoint, moduleIdentifier, nanoTime);
                         }
                     }
-                    nodeInformation.addModules(this, moduleList);
+                    nodeInformation.addModules(this, moduleList, nanoTime);
                     finishPart(0b01);
                     break;
                 }
@@ -1170,7 +1174,14 @@ class EJBClientChannel {
                         final String message = inputStream.readUTF();
                         final EJBModuleIdentifier moduleIdentifier = receiverInvocationContext.getClientInvocationContext().getLocator().getIdentifier().getModuleIdentifier();
                         final NodeInformation nodeInformation = discoveredNodeRegistry.getNodeInformation(getChannel().getConnection().getRemoteEndpointName());
-                        nodeInformation.removeModule(EJBClientChannel.this, moduleIdentifier);
+                        Assert.assertNotNull(nodeInformation);
+                        
+                        boolean mustRemoveNode = mustRemoveNodeFromDiscoveredNodeRegistry(receiverInvocationContext.getClientInvocationContext(), moduleIdentifier, nodeInformation);
+
+                        if(mustRemoveNode) {
+                            nodeInformation.removeModule(EJBClientChannel.this, moduleIdentifier);
+                        }
+
                         receiverInvocationContext.requestFailed(new NoSuchEJBException(message + " @ " + getChannel().getConnection().getPeerURI()), getRetryExecutor(receiverInvocationContext));
                     } catch (IOException e) {
                         receiverInvocationContext.requestFailed(new EJBException("Failed to read 'No such EJB' response", e), getRetryExecutor(receiverInvocationContext));

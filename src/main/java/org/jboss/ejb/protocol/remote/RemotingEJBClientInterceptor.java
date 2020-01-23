@@ -18,6 +18,9 @@
 
 package org.jboss.ejb.protocol.remote;
 
+import static org.jboss.ejb.client.annotation.ClientInterceptorPriority.JBOSS_AFTER;
+import static org.jboss.ejb.protocol.remote.RemotingEJBDiscoveryProvider.mustRemoveNodeFromDiscoveredNodeRegistry;
+
 import javax.ejb.NoSuchEJBException;
 
 import org.jboss.ejb.client.AbstractInvocationContext;
@@ -29,8 +32,6 @@ import org.jboss.ejb.client.EJBSessionCreationInvocationContext;
 import org.jboss.ejb.client.NodeAffinity;
 import org.jboss.ejb.client.SessionID;
 import org.jboss.ejb.client.annotation.ClientInterceptorPriority;
-
-import static org.jboss.ejb.client.annotation.ClientInterceptorPriority.JBOSS_AFTER;
 
 /**
  * The interceptor responsible for relaying invocation information back into the Remoting-based discovery system.
@@ -91,7 +92,8 @@ public final class RemotingEJBClientInterceptor implements EJBClientInterceptor 
                     final EJBClientChannel ejbClientChannel = context.getAttachment(RemoteEJBReceiver.EJBCC_KEY);
                     if (ejbClientChannel != null) {
                         final NodeInformation nodeInformation = ejbReceiver.getDiscoveredNodeRegistry().getNodeInformation(((NodeAffinity) targetAffinity).getNodeName());
-                        if (nodeInformation != null) {
+                        boolean mustRemoveNode = mustRemoveNodeFromDiscoveredNodeRegistry((EJBClientInvocationContext)context, locator.getIdentifier().getModuleIdentifier(), nodeInformation);
+                        if (mustRemoveNode) {
                             nodeInformation.removeModule(ejbClientChannel, locator.getIdentifier().getModuleIdentifier());
                         }
                     }
