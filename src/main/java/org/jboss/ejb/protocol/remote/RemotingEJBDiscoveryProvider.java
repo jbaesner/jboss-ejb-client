@@ -86,6 +86,8 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
 
     private final Map<URI, Long> failedDestinations = new ConcurrentHashMap<URI, Long>();
 
+    private final Object failedDestinationsLock = new Object();
+            
     private final ConcurrentHashMap<String, Set<String>> clusterNodes = new ConcurrentHashMap<>();
 
     private final ConcurrentHashMap<String, URI> effectiveAuthURIs = new ConcurrentHashMap<>();
@@ -120,13 +122,15 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
     }
     
     private boolean haveNotExpiredFailedDestination(URI uri) {
-    	if(!failedDestinations.containsKey(uri))
-    		return false;
-    	else {
-    		long failureTimestamp = failedDestinations.get(uri);
-    		long delta = System.nanoTime() - failureTimestamp;
-    		return delta < DESTINATION_RECHECK_INTERVAL;
-    	}
+        synchronized (failedDestinationsLock) {
+            if (!failedDestinations.containsKey(uri))
+                return false;
+            else {
+                long failureTimestamp = failedDestinations.get(uri);
+                long delta = System.nanoTime() - failureTimestamp;
+                return delta < DESTINATION_RECHECK_INTERVAL;
+            }
+        }
     }
 
     public DiscoveryRequest discover(final ServiceType serviceType, final FilterSpec filterSpec, final DiscoveryResult result) {
@@ -221,10 +225,11 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
         }
         // special second pass - retry everything because all were marked failed
         if (discoveryConnections && !ok) {
-            // clear the failedDestinations cache before the retry everything as all were marked as failed.
-            if (failedDestinations != null && !failedDestinations.isEmpty())
-                failedDestinations.clear();
-
+            synchronized (failedDestinationsLock) {
+                // clear the failedDestinations cache before the retry everything as all were marked as failed.
+                if (failedDestinations != null && !failedDestinations.isEmpty())
+                    failedDestinations.clear();
+            }
             Logs.INVOCATION.tracef("EJB discovery provider: all discovery-enabled configured connections marked failed, retrying configured connections ...");
 
             for (EJBClientConnection connection : configuredConnections) {
@@ -387,7 +392,9 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
 
                 public void handleFailed(final IOException exception, final URI destination) {
                     DiscoveryAttempt.this.discoveryResult.reportProblem(exception);
-                    failedDestinations.put(destination, System.nanoTime());
+                    synchronized (failedDestinationsLock) {
+                        failedDestinations.put(destination, System.nanoTime());
+                    }
                     if (exception instanceof ConnectException) {
                         connectFailedURIs.add(destination);
                         Logs.INVOCATION.tracef("DiscoveryAttempt: got ConnectException on node with destination = %s", destination);
@@ -408,12 +415,16 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
 
                 public void handleFailed(final IOException exception, final URI destination) {
                     DiscoveryAttempt.this.discoveryResult.reportProblem(exception);
-                    failedDestinations.put(destination, System.nanoTime());
+                    synchronized (failedDestinationsLock) {
+                        failedDestinations.put(destination, System.nanoTime());
+                    }
                     countDown();
                 }
 
                 public void handleDone(final EJBClientChannel clientChannel, final URI destination) {
-                    failedDestinations.remove(destination);
+                    synchronized (failedDestinationsLock) {
+                        failedDestinations.remove(destination);
+                    }
                     countDown();
                 }
             };
@@ -547,8 +558,10 @@ final class RemotingEJBDiscoveryProvider implements DiscoveryProvider, Discovere
                         phase2 = true;
                         outstandingCount.incrementAndGet();
                         for (URI uri : everything) {
-                            if(!failedDestinations.containsKey(uri)) {
-                                connectAndDiscover(uri, effectiveAuthMappings.get(uri));
+                            synchronized (failedDestinationsLock) {
+                                if(!failedDestinations.containsKey(uri)) {
+                                    connectAndDiscover(uri, effectiveAuthMappings.get(uri));
+                                }
                             }
                         }
                         countDown();
